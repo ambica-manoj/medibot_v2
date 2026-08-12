@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Env / secrets
+.env
+.env.example
+*.env
+
+# Indexes and data
+backend/faiss_index/
+data/
+*.faiss
+*.pkl
+*.npz
+
+# Node
+frontend/node_modules/
+frontend/dist/
+
+# Misc
+.DS_Store
+Thumbs.db
+*.log
