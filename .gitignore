@@ -25,3 +25,6 @@ frontend/dist/
 .DS_Store
 Thumbs.db
 *.log
+
+
+echo medical.pdf >> .gitignore
