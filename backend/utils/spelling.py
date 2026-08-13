@@ -4,6 +4,7 @@ Spell-check the user's query and offer a corrected version as a
 matching the reconstructed architecture's approach.
 """
 import re
+from typing import Optional
 from spellchecker import SpellChecker
 from utils.logger import get_logger
 
@@ -14,7 +15,7 @@ _spell = SpellChecker()
 _WORD_RE = re.compile(r"[A-Za-z']+")
 
 
-def suggest_correction(query: str) -> str | None:
+def suggest_correction(query: str) -> Optional[str]:
     words = _WORD_RE.findall(query)
     if not words:
         return None

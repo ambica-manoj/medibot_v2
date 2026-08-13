@@ -7,6 +7,7 @@ in the reconstructed architecture.
 """
 import json
 import time
+from typing import Optional, List, Tuple
 import boto3
 from config import settings
 from utils.logger import get_logger
@@ -46,7 +47,7 @@ def _get_client():
     return _client
 
 
-def _collect_text_content(content):
+def _collect_text_content(content) -> List[str]:
     texts = []
     if isinstance(content, str):
         return [content]
@@ -69,7 +70,33 @@ def _collect_text_content(content):
     return texts
 
 
-def _invoke(system_prompt: str, user_prompt: str, max_tokens: int = 512) -> tuple[str, float]:
+def _extract_text_from_response(payload: dict) -> str:
+    """Extract text from either Bedrock or OpenAI-style response formats."""
+    # Try Bedrock format first
+    text = "".join(_collect_text_content(payload.get("content", [])))
+    if text:
+        return text
+    
+    # Try OpenAI format
+    if "choices" in payload and isinstance(payload["choices"], list):
+        for choice in payload["choices"]:
+            if isinstance(choice, dict):
+                # Try message.content path (OpenAI)
+                if "message" in choice and isinstance(choice["message"], dict):
+                    content = choice["message"].get("content", "")
+                    if content:
+                        return content
+                # Try text path (some APIs)
+                if "text" in choice:
+                    text_val = choice.get("text", "")
+                    if text_val:
+                        return text_val
+    
+    # Fallback to output_text or text at root level
+    return payload.get("output_text", "") or payload.get("text", "")
+
+
+def _invoke(system_prompt: str, user_prompt: str, max_tokens: int = 512) -> Tuple[str, float]:
     client = _get_client()
     body = {
         "anthropic_version": "bedrock-2023-05-31",
@@ -98,9 +125,7 @@ def _invoke(system_prompt: str, user_prompt: str, max_tokens: int = 512) -> tupl
         logger.exception("Failed to parse Bedrock response JSON")
         raise
 
-    text = "".join(_collect_text_content(payload.get("content", [])))
-    if not text:
-        text = payload.get("output_text", "") or payload.get("text", "")
+    text = _extract_text_from_response(payload)
     if not text:
         logger.warning(
             "Model response contained no text; payload keys=%s",
@@ -118,16 +143,16 @@ def is_general_chat(query: str) -> bool:
     )
 
 
-def answer_general_chat(query: str) -> tuple[str, float]:
+def answer_general_chat(query: str) -> Tuple[str, float]:
     return _invoke(GENERAL_CHAT_SYSTEM_PROMPT, query, max_tokens=200)
 
 
-def answer_with_context(query: str, context: str) -> tuple[str, float]:
+def answer_with_context(query: str, context: str) -> Tuple[str, float]:
     user_prompt = f"Context:\n{context}\n\nQuestion: {query}"
     return _invoke(RAG_SYSTEM_PROMPT, user_prompt, max_tokens=512)
 
 
-def _parse_json_array(text: str) -> list[str] | None:
+def _parse_json_array(text: str) -> Optional[List[str]]:
     try:
         suggestions = json.loads(text)
         if isinstance(suggestions, list):
@@ -149,13 +174,13 @@ def _parse_json_array(text: str) -> list[str] | None:
     return None
 
 
-def _parse_follow_up_text(text: str) -> list[str]:
+def _parse_follow_up_text(text: str) -> List[str]:
     lines = [line.strip().lstrip("- ").lstrip("0123456789. ") for line in text.splitlines() if line.strip()]
     suggestions = [line for line in lines if len(line) > 3]
     return suggestions[:3]
 
 
-def suggest_follow_ups(query: str, answer: str) -> list[str]:
+def suggest_follow_ups(query: str, answer: str) -> List[str]:
     prompt = f"Question: {query}\nAnswer: {answer}"
     text, _ = _invoke(FOLLOWUP_SYSTEM_PROMPT, prompt, max_tokens=200)
     if not text.strip():

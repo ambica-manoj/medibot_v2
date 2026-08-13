@@ -13,7 +13,7 @@ import json
 import os
 import pickle
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import List, Dict, Optional, Tuple
 
 import faiss
 import numpy as np
@@ -37,7 +37,7 @@ class RetrievedChunk:
     score: float
 
 
-def _paths(doc_id: str):
+def _paths(doc_id: str) -> Dict[str, str]:
     base = settings.local_index_dir
     os.makedirs(base, exist_ok=True)
     return {
@@ -48,7 +48,7 @@ def _paths(doc_id: str):
     }
 
 
-def get_index_paths(doc_id: str) -> dict[str, str]:
+def get_index_paths(doc_id: str) -> Dict[str, str]:
     return _paths(doc_id)
 
 
@@ -121,7 +121,7 @@ def build_index_for_document(doc_id: str, filename: str, chunks: List[Chunk], pa
     logger.info("Hybrid index built and saved for doc_id=%s", doc_id)
 
 
-def _load_document_index(doc_id: str):
+def _load_document_index(doc_id: str) -> Optional[Tuple]:
     paths = _paths(doc_id)
     if not all(os.path.exists(p) for p in paths.values()):
         return None
@@ -137,9 +137,9 @@ def _load_document_index(doc_id: str):
 
 def _reciprocal_rank_fusion(
     dense_ranking: List[int], sparse_ranking: List[int], k: int = 60
-) -> dict:
+) -> Dict[int, float]:
     """Combine two rankings (lists of chunk indices, best first) into fused scores."""
-    scores: dict[int, float] = {}
+    scores: Dict[int, float] = {}
     for rank, idx in enumerate(dense_ranking):
         scores[idx] = scores.get(idx, 0.0) + settings.dense_weight / (k + rank + 1)
     for rank, idx in enumerate(sparse_ranking):

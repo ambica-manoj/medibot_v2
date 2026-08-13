@@ -3,6 +3,7 @@ Thin wrapper around sentence-transformers so the model is loaded once and
 shared across requests, rather than re-instantiated per document like the
 old create_and_save_faiss_index() did.
 """
+from typing import Optional, List
 import numpy as np
 from sentence_transformers import SentenceTransformer
 from config import settings
@@ -10,7 +11,7 @@ from utils.logger import get_logger
 
 logger = get_logger(__name__)
 
-_model: SentenceTransformer | None = None
+_model: Optional[SentenceTransformer] = None
 
 
 def get_embedding_model() -> SentenceTransformer:
@@ -21,7 +22,7 @@ def get_embedding_model() -> SentenceTransformer:
     return _model
 
 
-def embed_texts(texts: list[str]) -> np.ndarray:
+def embed_texts(texts: List[str]) -> np.ndarray:
     model = get_embedding_model()
     embeddings = model.encode(texts, convert_to_tensor=False, show_progress_bar=False)
     return np.array(embeddings).astype("float32")
