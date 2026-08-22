@@ -9,7 +9,7 @@ each chunk tagged with the page number(s) it came from, so answers can cite
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from typing import List, Tuple
-from pypdf import PdfReader
+from pypdf import PdfReader # type:ignore
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
@@ -17,8 +17,8 @@ logger = get_logger(__name__)
 # OCR deps are optional at import time - only required if a page has no
 # extractable text (i.e. it's a scanned image).
 try:
-    from pdf2image import convert_from_path
-    import pytesseract
+    from pdf2image import convert_from_path #type: ignore
+    import pytesseract  #type: ignore
     OCR_AVAILABLE = True
 except ImportError:
     OCR_AVAILABLE = False

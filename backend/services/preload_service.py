@@ -37,11 +37,15 @@ def list_preloaded_documents() -> List[dict]:
 def load_preloaded_documents() -> None:
     path = settings.preloaded_pdf_path
     if not path:
+        if _load_existing_local_index():
+            return
         logger.info("No preloaded PDF configured")
         return
 
     if not os.path.exists(path):
         logger.warning("Preloaded PDF path configured but not found: %s", path)
+        if _load_existing_local_index():
+            return
         return
 
     filename = os.path.basename(path)
@@ -80,6 +84,41 @@ def load_preloaded_documents() -> None:
     PRELOADED_DOC_IDS.append(doc_id)
     PRELOADED_DOC_METADATA[doc_id] = meta
     logger.info("Loaded preloaded document %s as doc_id=%s", filename, doc_id)
+
+
+def _load_existing_local_index() -> bool:
+    """Register a bundled index when its source PDF is unavailable."""
+    index_dir = settings.local_index_dir
+    if not os.path.isdir(index_dir):
+        return False
+
+    for filename in os.listdir(index_dir):
+        if not filename.startswith("preloaded-") or not filename.endswith("_meta.json"):
+            continue
+
+        doc_id = filename[: -len("_meta.json")]
+        if not vector_store.index_exists(doc_id) or doc_id in PRELOADED_DOC_IDS:
+            continue
+
+        try:
+            with open(os.path.join(index_dir, filename), encoding="utf-8") as file:
+                metadata = json.load(file)
+        except (OSError, json.JSONDecodeError) as exc:
+            logger.warning("Failed to read local index metadata %s: %s", filename, exc)
+            continue
+
+        document_name = metadata.get("filename", f"{doc_id}.pdf")
+        PRELOADED_DOC_IDS.append(doc_id)
+        PRELOADED_DOC_METADATA[doc_id] = {
+            "filename": document_name,
+            "s3_key": f"{settings.preloaded_s3_prefix}/{doc_id}/{document_name}",
+            "pages": metadata.get("pages", 0),
+            "chunks": metadata.get("chunks", 0),
+        }
+        logger.info("Loaded existing local index for %s as doc_id=%s", document_name, doc_id)
+        return True
+
+    return False
 
 
 def _load_preload_metadata(doc_id: str, filename: str, s3_key: str) -> dict:

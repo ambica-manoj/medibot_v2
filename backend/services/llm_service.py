@@ -8,7 +8,7 @@ in the reconstructed architecture.
 import json
 import time
 from typing import Optional, List, Tuple
-import boto3
+import boto3  # type: ignore
 from config import settings
 from utils.logger import get_logger
 
@@ -29,10 +29,20 @@ question unrelated to any uploaded document. Respond briefly and warmly,
 and if relevant, invite them to ask a question about their uploaded
 documents."""
 
-FOLLOWUP_SYSTEM_PROMPT = """Given the user's question and the answer that
-was provided, suggest exactly 3 short, relevant follow-up questions the
-user might want to ask next. Respond ONLY as a JSON array of 3 strings,
-nothing else."""
+FOLLOWUP_SYSTEM_PROMPT = """You are a helpful assistant. Your task is to suggest 
+exactly 3 follow-up questions that a user might want to ask after receiving an answer.
+
+CRITICAL REQUIREMENTS:
+1. Return ONLY a JSON array of 3 strings
+2. Each string MUST be a complete, grammatically correct question (ends with ?)
+3. No preamble, no explanation, no markdown, no numbered lists
+4. Each question should be 5-15 words long
+5. Questions should be relevant to the topic but explore different angles
+
+Example output format (and ONLY this format):
+["What causes this condition?", "Are there any treatments available?", "When should I seek medical help?"]
+
+NOW generate 3 follow-up questions based on this question and answer:"""
 
 
 def _get_client():
@@ -153,48 +163,88 @@ def answer_with_context(query: str, context: str) -> Tuple[str, float]:
 
 
 def _parse_json_array(text: str) -> Optional[List[str]]:
+    """
+    Robustly parse JSON array, extract strings, and validate they're questions.
+    Returns None if parsing fails or validation fails.
+    """
+    # Try direct parse first
     try:
         suggestions = json.loads(text)
-        if isinstance(suggestions, list):
-            return [str(s) for s in suggestions if isinstance(s, (str, int, float))]
+        if isinstance(suggestions, list) and len(suggestions) >= 3:
+            validated = []
+            for s in suggestions[:3]:
+                s_str = str(s).strip()
+                # Must be at least 5 chars and ideally end with ?
+                if len(s_str) >= 5:
+                    validated.append(s_str)
+            if len(validated) == 3:
+                return validated
     except json.JSONDecodeError:
         pass
 
-    # Fallback: try to extract a JSON array substring from model output.
+    # Fallback: try to extract JSON array substring
     start = text.find("[")
     end = text.rfind("]")
     if start != -1 and end != -1 and start < end:
         try:
             suggestions = json.loads(text[start : end + 1])
-            if isinstance(suggestions, list):
-                return [str(s) for s in suggestions if isinstance(s, (str, int, float))]
+            if isinstance(suggestions, list) and len(suggestions) >= 3:
+                validated = []
+                for s in suggestions[:3]:
+                    s_str = str(s).strip()
+                    if len(s_str) >= 5:
+                        validated.append(s_str)
+                if len(validated) == 3:
+                    return validated
         except json.JSONDecodeError:
             pass
 
     return None
 
 
-def _parse_follow_up_text(text: str) -> List[str]:
-    lines = [line.strip().lstrip("- ").lstrip("0123456789. ") for line in text.splitlines() if line.strip()]
-    suggestions = [line for line in lines if len(line) > 3]
-    return suggestions[:3]
+def _is_valid_question(text: str) -> bool:
+    """Check if text looks like a question (5+ chars, ideally ends with ?)."""
+    text = text.strip()
+    if len(text) < 5:
+        return False
+    # Ideally ends with ? but allow some wiggle
+    if text.endswith(("?", ".", "!")):
+        return True
+    # Accept if it's phrased as a question (starts with question word)
+    q_words = ("what", "why", "how", "when", "where", "who", "which", "can", "could", "should", "will", "would", "is", "are", "do", "does")
+    return text.lower().startswith(q_words)
 
 
 def suggest_follow_ups(query: str, answer: str) -> List[str]:
+    """
+    Generate 3 follow-up questions using Bedrock.
+    Strict validation: returns empty list if LLM output doesn't meet requirements.
+    """
     prompt = f"Question: {query}\nAnswer: {answer}"
-    text, _ = _invoke(FOLLOWUP_SYSTEM_PROMPT, prompt, max_tokens=200)
+    try:
+        text, _ = _invoke(FOLLOWUP_SYSTEM_PROMPT, prompt, max_tokens=200)
+    except Exception as exc:
+        logger.exception("Follow-up generation failed")
+        return []
+
     if not text.strip():
         logger.warning("Follow-up suggestions returned empty output")
         return []
 
+    # Try strict JSON parsing first
     suggestions = _parse_json_array(text)
     if suggestions is not None:
-        return suggestions[:3]
+        # Final validation: all must look like questions
+        valid = [s for s in suggestions if _is_valid_question(s)]
+        if len(valid) >= 2:  # Accept if at least 2 are valid
+            logger.info("Follow-up suggestions validated successfully")
+            return valid[:3]
+        logger.warning("Follow-up JSON parsed but failed question validation")
 
-    suggestions = _parse_follow_up_text(text)
-    if suggestions:
-        logger.warning("Follow-up suggestions returned non-JSON text, using fallback parse.")
-        return suggestions
-
-    logger.warning("Failed to parse follow-up suggestions: raw output=%r", text)
+    # If JSON parsing failed, log the raw output and return empty list
+    logger.warning(
+        "Follow-up suggestions failed to parse as JSON or validate as questions. "
+        "Raw output: %r (first 200 chars)",
+        text[:200]
+    )
     return []

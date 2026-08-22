@@ -11,13 +11,13 @@ class Settings(BaseSettings):
     # AWS
     aws_access_key_id: str = ""
     aws_secret_access_key: str = ""
-    aws_region: str = "us-east-1"
+    aws_region: str = "ap-south-1"
 
     # S3
     s3_bucket_name: str = "medibot-documents"
 
     # Bedrock
-    bedrock_model_id: str = "anthropic.claude-3-haiku-20240307-v1:0"
+    bedrock_model_id: str = "google.gemma-3-4b-it"
 
     # Local index storage
     local_index_dir: str = "faiss_index"
