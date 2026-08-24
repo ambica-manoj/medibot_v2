@@ -4,6 +4,8 @@ S3-backed storage for uploaded source PDFs, replacing the old local-only
 only the original documents live in S3, so they persist and can be
 re-downloaded / re-indexed if the local index is ever lost.
 """
+from typing import List
+
 import boto3
 from botocore.exceptions import ClientError
 from config import settings
@@ -40,7 +42,7 @@ def download_file_from_s3(s3_key: str, local_path: str) -> str:
     return local_path
 
 
-def list_documents(prefix: str = "") -> list[str]:
+def list_documents(prefix: str = "") -> List[str]:
     client = _get_client()
     response = client.list_objects_v2(Bucket=settings.s3_bucket_name, Prefix=prefix)
     return [obj["Key"] for obj in response.get("Contents", [])]

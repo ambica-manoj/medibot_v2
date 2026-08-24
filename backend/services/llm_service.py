@@ -57,53 +57,50 @@ def _get_client():
     return _client
 
 
-def _collect_text_content(content) -> List[str]:
-    texts = []
-    if isinstance(content, str):
-        return [content]
+def _extract_bedrock_text(payload: dict) -> str:
+    """Extract the first text block from an Anthropic Bedrock response."""
+    if "content" not in payload:
+        return ""
 
-    if isinstance(content, dict):
-        for key, value in content.items():
-            if key in {"text", "output_text"} and isinstance(value, str):
-                texts.append(value)
-            elif key == "content" and isinstance(value, str):
-                texts.append(value)
-            elif isinstance(value, (dict, list)):
-                texts.extend(_collect_text_content(value))
-        return texts
+    content = payload.get("content", [])
+    if not isinstance(content, list) or not content:
+        logger.warning(
+            "Bedrock response content is empty or malformed; payload keys=%s",
+            list(payload.keys()),
+        )
+        return ""
 
-    if isinstance(content, list):
-        for item in content:
-            texts.extend(_collect_text_content(item))
-        return texts
+    text_block = content[0]
+    if isinstance(text_block, dict) and isinstance(text_block.get("text"), str):
+        return text_block["text"].strip()
 
-    return texts
+    logger.warning("Bedrock response has an unexpected first content block: %s", text_block)
+    return ""
 
 
-def _extract_text_from_response(payload: dict) -> str:
-    """Extract text from either Bedrock or OpenAI-style response formats."""
-    # Try Bedrock format first
-    text = "".join(_collect_text_content(payload.get("content", [])))
-    if text:
-        return text
-    
-    # Try OpenAI format
-    if "choices" in payload and isinstance(payload["choices"], list):
-        for choice in payload["choices"]:
-            if isinstance(choice, dict):
-                # Try message.content path (OpenAI)
-                if "message" in choice and isinstance(choice["message"], dict):
-                    content = choice["message"].get("content", "")
-                    if content:
-                        return content
-                # Try text path (some APIs)
-                if "text" in choice:
-                    text_val = choice.get("text", "")
-                    if text_val:
-                        return text_val
-    
-    # Fallback to output_text or text at root level
-    return payload.get("output_text", "") or payload.get("text", "")
+def _extract_model_text(payload: dict) -> str:
+    """Extract text from the Anthropic or OpenAI-compatible model response."""
+    bedrock_text = _extract_bedrock_text(payload)
+    if bedrock_text:
+        return bedrock_text
+
+    choices = payload.get("choices", [])
+    if not isinstance(choices, list):
+        return ""
+
+    for choice in choices:
+        if not isinstance(choice, dict):
+            continue
+        message = choice.get("message")
+        if isinstance(message, dict):
+            content = message.get("content", "")
+            if isinstance(content, str) and content.strip():
+                return content.strip()
+        text = choice.get("text", "")
+        if isinstance(text, str) and text.strip():
+            return text.strip()
+
+    return ""
 
 
 def _invoke(system_prompt: str, user_prompt: str, max_tokens: int = 512) -> Tuple[str, float]:
@@ -135,7 +132,7 @@ def _invoke(system_prompt: str, user_prompt: str, max_tokens: int = 512) -> Tupl
         logger.exception("Failed to parse Bedrock response JSON")
         raise
 
-    text = _extract_text_from_response(payload)
+    text = _extract_model_text(payload)
     if not text:
         logger.warning(
             "Model response contained no text; payload keys=%s",

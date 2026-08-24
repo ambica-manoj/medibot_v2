@@ -3,6 +3,7 @@ Centralized configuration for the Medibot backend.
 Reads from environment / .env so nothing sensitive is hardcoded.
 """
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import field_validator
 
 
 class Settings(BaseSettings):
@@ -36,6 +37,16 @@ class Settings(BaseSettings):
     rrf_k: int = 60
     score_threshold_ratio: float = 0.75  # keep chunks scoring >= 75% of top fused score
     max_chunks: int = 8
+
+    @field_validator("aws_access_key_id", "aws_secret_access_key")
+    @classmethod
+    def validate_aws_credentials(cls, value: str) -> str:
+        if not value or not value.strip():
+            raise ValueError(
+                "AWS credentials are required. Set AWS_ACCESS_KEY_ID and "
+                "AWS_SECRET_ACCESS_KEY in the .env file."
+            )
+        return value.strip()
 
 
 settings = Settings()
