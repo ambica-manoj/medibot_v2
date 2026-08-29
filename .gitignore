@@ -8,6 +8,7 @@ venv/
 # Env / secrets
 .env
 *.env
+.env.production
 
 # Indexes and data
 backend/faiss_index/
