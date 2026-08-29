@@ -16,18 +16,21 @@ logger = get_logger(__name__)
 
 _client = None
 
-RAG_SYSTEM_PROMPT = """You are Medibot, a careful medical-information assistant.
-Answer the user's question using ONLY the provided context excerpts.
-If the answer is not contained in the context, say you don't know rather
-than guessing. Keep answers concise and clear. Do not provide a diagnosis;
-frame information as general medical knowledge and suggest consulting a
-healthcare professional for personal medical decisions."""
+RAG_SYSTEM_PROMPT = """You are Medibot, a medical information assistant.
+Answer questions clearly and concisely using the provided information.
 
-GENERAL_CHAT_SYSTEM_PROMPT = """You are Medibot, a friendly assistant for a
-medical-document Q&A tool. The user has sent a greeting or a general
-question unrelated to any uploaded document. Respond briefly and warmly,
-and if relevant, invite them to ask a question about their uploaded
-documents."""
+Guidelines:
+- Provide factual, straightforward medical information
+- Use simple language and markdown formatting when helpful
+- Do not mention documents, sources, retrieval, or "provided text"
+- If you cannot answer from the available information, say: "I don't have information about that."
+- Do not provide personal diagnoses; frame answers as general medical knowledge
+- Recommend consulting a healthcare professional for personal health decisions
+- Keep responses brief and focused"""
+
+GENERAL_CHAT_SYSTEM_PROMPT = """You are Medibot, a friendly medical information assistant.
+The user has sent a greeting or general question. Respond warmly and briefly.
+If appropriate, invite them to ask a medical question."""
 
 FOLLOWUP_SYSTEM_PROMPT = """You are a helpful assistant. Your task is to suggest 
 exactly 3 follow-up questions that a user might want to ask after receiving an answer.
@@ -58,23 +61,17 @@ def _get_client():
 
 
 def _extract_bedrock_text(payload: dict) -> str:
-    """Extract the first text block from an Anthropic Bedrock response."""
-    if "content" not in payload:
-        return ""
+    """Extract text from Bedrock content blocks and compatible fallbacks."""
+    content = payload.get("content")
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and isinstance(block.get("text"), str):
+                return block["text"]
 
-    content = payload.get("content", [])
-    if not isinstance(content, list) or not content:
-        logger.warning(
-            "Bedrock response content is empty or malformed; payload keys=%s",
-            list(payload.keys()),
-        )
-        return ""
-
-    text_block = content[0]
-    if isinstance(text_block, dict) and isinstance(text_block.get("text"), str):
-        return text_block["text"].strip()
-
-    logger.warning("Bedrock response has an unexpected first content block: %s", text_block)
+    for key in ("output_text", "text"):
+        value = payload.get(key)
+        if isinstance(value, str):
+            return value
     return ""
 
 
