@@ -27,7 +27,7 @@ export default function Message({ message, onFollowUpClick }) {
   return (
     <div className={`message ${isUser ? "user" : "bot"}`}>
       <div className="message-content">
-        <p>{message.text}</p>
+        <div className="response-text">{message.text}</div>
 
         {message.correctedQuery && (
           <p className="spelling-hint">
@@ -37,10 +37,11 @@ export default function Message({ message, onFollowUpClick }) {
 
         {followUps.length > 0 && (
           <div className="follow-ups">
+            <div className="follow-ups-label">Ask:</div>
             {followUps.map((q, i) => (
-              <button 
-                key={i} 
-                className="follow-up-chip" 
+              <button
+                key={i}
+                className="follow-up-chip"
                 onClick={() => onFollowUpClick(q)}
                 title={q}
               >
@@ -51,9 +52,9 @@ export default function Message({ message, onFollowUpClick }) {
         )}
 
         {message.metrics && (
-          <p className="metrics">
-            {message.metrics.total_ms.toFixed(0)}ms · {message.metrics.chunks_used} chunk(s)
-          </p>
+          <div className="metrics">
+            {message.metrics.total_ms.toFixed(0)}ms · {message.metrics.chunks_used} chunk{message.metrics.chunks_used !== 1 ? "s" : ""}
+          </div>
         )}
       </div>
     </div>
