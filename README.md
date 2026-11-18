@@ -1,90 +1,68 @@
 # Medibot v2
 
-Level-up of the original Flask + local Llama-2 + FAISS Medical Chat Bot into
-a FastAPI + AWS Bedrock + hybrid-search (FAISS + BM25) architecture with a
-React frontend, following the `aws_rag_chatbot-main` pattern.
+Medibot is a medical question-answering application built using **Retrieval-Augmented Generation (RAG)**. It retrieves relevant information from a preloaded medical PDF and uses **Amazon Bedrock** to generate answers through a React chat interface.
 
-## What changed vs. v1
+## Features
 
-- **Flask → FastAPI**, with a simplified query-only route using a preloaded medical document
-- **Local Llama-2 GGML (CTransformers) → AWS Bedrock (Claude 3 Haiku)**, called directly via `boto3`, no LangChain chain
-- **Local-only PDFs → S3** for source document and index storage backup
-- **Fixed-size chunking → page-aware chunking**, with OCR fallback (pytesseract + pdf2image) for scanned pages
-- **FAISS-only → FAISS + BM25 hybrid search**, fused with Reciprocal Rank Fusion, dynamic top-k via score threshold instead of a fixed `k=2`
-- **Single preloaded document** replaces user-upload/session flow
-- **Vanilla JS/Jinja → React (Vite)** frontend talking to a REST API
-- Added: citations (filename + page), 3 follow-up question suggestions per answer, spelling-correction suggestions, latency/chunk metrics, general-chat routing for greetings
+- Medical question answering using a PDF knowledge base.
+- Hybrid search combining semantic search and keyword matching.
+- Page-aware PDF processing with OCR fallback for scanned pages.
+- Follow-up question and spelling suggestions.
+- Source filename, page number, and text snippets returned by the API.
+- Response time and retrieved-chunk count displayed in the chat.
+- Local index storage with Amazon S3 backup and restore.
 
-## Project layout
+## Architecture
 
-```
-backend/
-  main.py                 FastAPI app, CORS, lifespan startup
-  config.py               Settings (env-driven)
-  requirements.txt
-  .env.example
-  routes/
-    query.py              hybrid retrieval -> Bedrock -> answer
-  services/
-    pdf_service.py        page-aware extraction + chunking + OCR fallback
-    embedding_service.py  sentence-transformers wrapper
-    vector_store.py       FAISS + BM25 + RRF fusion, per-doc index files
-    preload_service.py    load/preload medical PDF + S3/FAISS sync
-    s3_service.py         upload/download/list/delete in S3
-    llm_service.py        Bedrock invoke_model calls, prompts
-  models/
-    schemas.py            Pydantic request/response models
-  utils/
-    logger.py
-    spelling.py           pyspellchecker suggestions
-frontend/
-  src/
-    App.jsx
-    api.js                 fetch wrapper
-    components/
-      ChatBox.jsx
-      Message.jsx
-```
+The application has two main stages:
 
-## Backend setup
+### Document Processing
 
-```bash
-cd backend
-python -m venv venv && source venv/bin/activate   # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env   # fill in AWS keys, S3 bucket, region, Bedrock model id, and PRELOADED_PDF_PATH
-uvicorn backend.main:app --reload --port 8000
-```
+1. Extract text from the medical PDF using pypdf, with OCR fallback where needed.
+2. Split the text into overlapping chunks while preserving page numbers.
+3. Generate embeddings using SentenceTransformers and build a FAISS index.
+4. Create a BM25 keyword index for the same chunks.
+5. Save the indexes locally and back them up to Amazon S3.
 
-You'll need:
-- An AWS account with **Bedrock model access enabled** for the Claude model in `BEDROCK_MODEL_ID`, in the region set by `AWS_REGION`.
-- An **S3 bucket** (`S3_BUCKET_NAME`) the credentials can read/write.
-- A local medical PDF file referenced by `PRELOADED_PDF_PATH` in `backend/.env`.
-- (Optional, for OCR) `tesseract-ocr` and `poppler-utils` installed at the OS level, since `pytesseract`/`pdf2image` are just Python wrappers around them.
+### Question Answering
 
-## Frontend setup
+1. The React frontend sends the user's question to the FastAPI backend.
+2. FAISS retrieves passages with similar meaning, while BM25 retrieves keyword matches.
+3. Reciprocal Rank Fusion (RRF) combines both rankings to select context.
+4. The question and retrieved context are sent to Amazon Bedrock to generate an answer.
+5. The backend returns the answer, source metadata, follow-up suggestions, and timing metrics.
 
-```bash
-cd frontend
-npm install
-npm run dev   # runs on http://localhost:3000, talks to http://localhost:8000
-```
+Recognized greetings bypass document retrieval.
 
-Set `VITE_API_BASE` in a `.env` file inside `frontend/` if the backend isn't on `localhost:8000`.
+## Tech Stack
 
-## API summary
+| Component | Technology |
+| --- | --- |
+| Frontend | React, Vite |
+| Backend | Python, FastAPI, Pydantic |
+| PDF Processing | pypdf, Tesseract, pdf2image |
+| Embeddings | SentenceTransformers — all-MiniLM-L6-v2 |
+| Semantic Search | FAISS |
+| Keyword Search | BM25 |
+| Ranking Fusion | Reciprocal Rank Fusion |
+| Answer Generation | Amazon Bedrock |
+| Storage | Local files, Amazon S3 |
+| AWS Integration | boto3 |
 
-| Method | Path | Purpose |
-|---|---|---|
-| POST | `/api/query` | Ask a medical question about the loaded document |
+## Why Hybrid RAG?
 
-## Notes / things you'll still want to do
+Semantic search helps find passages with similar meaning, while keyword search helps match specific medical terms. Combining both methods provides two ways to find relevant context before generating an answer.
 
-- This scaffold builds a simplified medical Q/A service using one preloaded
-  medical document. Review chunk sizes, the score-threshold ratio, and the
-  Bedrock model choice against your own content and cost/latency needs.
-- `vector_store.py` persists indexes to local disk under `faiss_index/`
-  (configurable) — for real multi-instance deployment, use shared storage
-  or rebuild from S3 on cold start.
-- Add auth in front of `/api/*` before deploying anywhere public — this
-  scaffold has none.
+The PDF acts as an external knowledge base; it is not used to train or fine-tune the language model.
+
+
+## Current Scope
+
+- Uses a preloaded medical PDF rather than user uploads.
+- Each question is processed independently; conversation history is not sent to the model.
+- Source metadata is available through the API but is not currently displayed in the chat interface.
+- The configured Bedrock model must match the request format used by the backend.
+
+## Disclaimer
+
+Medibot is an educational project for general medical information. It is not a clinically validated diagnostic tool or a substitute for professional medical advice.
